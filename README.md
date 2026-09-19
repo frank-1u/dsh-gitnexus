@@ -53,6 +53,8 @@ The plugin bundle patch contributes both the native adapter row and the GitNexus
 
 On Windows, `cliCommand: gitnexus` is resolved through `PATH`; the adapter then runs the bundled `node_modules/gitnexus/dist/cli/index.js` directly, avoiding a shell and keeping the search pattern out of `cmd.exe` parsing. An absolute Node script or executable is also accepted.
 
+Inside DSH Desktop the host process is Electron, whose embedded Node reports a different `NODE_MODULE_VERSION` than the system Node. GitNexus's native LadybugDB addon fails to initialize there ("DLL initialization routine failed"), so the adapter runs the CLI through a real `node` — the shim's sibling `node.exe` first, then `node` on `PATH` — and only falls back to the Electron binary.
+
 ## Bundled MCP registration
 
 The adapter is deliberately lightweight; the bundled `mcp-gitnexus` row keeps the full GitNexus MCP tool surface (`query`, `context`, `impact`, and related tools) available after the same plugin installation. The MCP command is intentionally `gitnexus`, not a machine-specific Node path. DSH's MCP client uses `cross-spawn`, which resolves the npm `.cmd` shim on Windows without a shell.

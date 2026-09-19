@@ -73,6 +73,20 @@ test('runner: keeps a quoted Windows path in one token', () => {
   assert.deepEqual(splitCommandLine('node --flag "C:\\Program Files\\app.js"'), ['node', '--flag', 'C:\\Program Files\\app.js'])
 })
 
+test('runner: prefers a real Node over the Electron binary', () => {
+  const electronHost = { electron: true, execPath: 'D:\Program Files\DSH Desktop\DSH Desktop.exe' }
+  const resolved = prepareCliRunner(fixture('gitnexus-stub.mjs'), electronHost)
+  assert.equal(resolved.electronRunAsNode, false)
+  assert.notEqual(resolved.program, electronHost.execPath)
+  assert.match(path.basename(resolved.program), /^node(\.exe)?$/i)
+})
+
+test('runner: keeps process.execPath when the host is not Electron', () => {
+  const resolved = prepareCliRunner(fixture('gitnexus-stub.mjs'), { electron: false, execPath: process.execPath })
+  assert.equal(resolved.program, process.execPath)
+  assert.equal(resolved.electronRunAsNode, false)
+})
+
 test('adapter: attaches GitNexus context after a native grep', async () => {
   const decision = await harness()(execution(repoRoot, 'grep', { pattern: 'extractSearchPattern' }))
   assert.equal(decision.kind, 'accept')
