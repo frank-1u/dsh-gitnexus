@@ -6,7 +6,7 @@
         enableAugment: true
         enableStaleNotice: true
         augmentTimeoutMs: 7000
-        staleTimeoutMs: 5000
+        staleTimeoutMs: 3000
         contextMaxChars: 12000
         cacheTtlMs: 300000
         staleNoticeTtlMs: 600000

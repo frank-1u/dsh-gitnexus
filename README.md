@@ -12,7 +12,7 @@ gitnexus augment -- <search-pattern>
 
 and attach the returned `[GitNexus] ...` context as a DSH `additionalContext` for the next model request.
 
-After a successful `git commit`, `git merge`, `git rebase`, `git cherry-pick`, or `git pull`, it runs `gitnexus status --json` and, when the index is stale, tells the agent to run `gitnexus analyze --index-only`.
+After a successful `git commit`, `git merge`, `git rebase`, `git cherry-pick`, or `git pull`, it reads lightweight GitNexus registry metadata and, when the indexed commit no longer matches `HEAD`, tells the agent to run `gitnexus analyze --index-only`.
 
 This is intentionally a **post-result adapter**. DSH's typed tool pipeline does not expose GitNexus-style pre-tool `additionalContext`; attaching context after the search is the supported model-visible channel.
 
@@ -63,7 +63,7 @@ The adapter is deliberately lightweight. Keep GitNexus MCP mounted for full `que
 | `enableAugment` | `true` | Attach graph context after searches |
 | `enableStaleNotice` | `true` | Check/index reminders after successful git mutations |
 | `augmentTimeoutMs` | `7000` | Upper bound for one augment call |
-| `staleTimeoutMs` | `5000` | Upper bound for one status call |
+| `staleTimeoutMs` | `3000` | Upper bound for the git/registry staleness check |
 | `contextMaxChars` | `12000` | Maximum injected context characters |
 | `cacheTtlMs` | `300000` | Reuse an augment result for the same cwd/pattern |
 | `staleNoticeTtlMs` | `600000` | Minimum interval between stale notices per cwd |
