@@ -80,4 +80,6 @@ Failures are silent unless `debug: true`; they never turn the completed DSH tool
 npm test
 ```
 
+`test/e2e.test.js` drives the adapter through its real `tools/post-execute` listener: CLI resolution, the context-injection and silent-failure contracts, and the stale-index notice against a throwaway git repository. It runs offline against the stubs in `test/fixtures/`; the single test that exercises the real GitNexus CLI skips itself when `gitnexus` is not on `PATH` or the checkout has no `.gitnexus` index.
+
 Tested with DeepSeek Harness `0.1.5-rc.2` and GitNexus `1.6.12`.
