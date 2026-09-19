@@ -12,3 +12,11 @@
         staleNoticeTtlMs: 600000
         maxConcurrent: 2
         debug: false
+
+    - id: mcp-gitnexus
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: gitnexus
+        transport: stdio
+        command: gitnexus
+        args: [mcp]

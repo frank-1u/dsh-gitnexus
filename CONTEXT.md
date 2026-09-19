@@ -19,3 +19,7 @@ _Avoid_: pre-tool hook
 **Stale Index Notice**:
 A model-visible reminder that the current Git HEAD no longer matches the indexed GitNexus commit.
 _Avoid_: automatic reindex
+
+**Bundled MCP Registration**:
+An installed plugin's declaration that a named MCP server should become part of the same DSH profile.
+_Avoid_: manual MCP patch, post-install setup step

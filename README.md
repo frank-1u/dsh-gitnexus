@@ -18,15 +18,21 @@ This is intentionally a **post-result adapter**. DSH's typed tool pipeline does 
 
 ## Install into a profile
 
-From a DSH CLI:
+Once published to npm, install it with the normal DSH plugin command:
 
 ```sh
-dsh plugin --profile <profile> add D:/Codes/dsh-gitnexus
+dsh plugin --profile web add dsh-gitnexus@latest
 ```
 
-DSH Desktop owns the `desktop` profile exclusively. Install the local package from Desktop's Plugin Manager, or close Desktop and use its bundled DSH CLI once.
+For local testing before publishing:
 
-The plugin contributes this row through its bundle patch:
+```sh
+dsh plugin --profile web add file:D:/Codes/dsh-gitnexus
+```
+
+DSH Desktop owns the `desktop` profile exclusively. Install from its Plugin Manager after the package is published, or close Desktop and use its bundled DSH CLI once.
+
+The plugin bundle patch contributes both the native adapter row and the GitNexus MCP row. After installation, no manual `cordis.patch.yml` edit is required:
 
 ```yaml
 - id: gitnexus-context-injector
@@ -35,25 +41,21 @@ The plugin contributes this row through its bundle patch:
     cliCommand: gitnexus
     enableAugment: true
     enableStaleNotice: true
-```
 
-On Windows, `cliCommand: gitnexus` is resolved through `PATH`; the adapter then runs the bundled `node_modules/gitnexus/dist/cli/index.js` directly, avoiding a shell and keeping the search pattern out of `cmd.exe` parsing. An absolute Node script or executable is also accepted.
-
-## Recommended MCP companion
-
-The adapter is deliberately lightweight. Keep GitNexus MCP mounted for full `query`, `context`, `impact`, and related tools. For this machine, the equivalent DSH row is:
-
-```yaml
 - id: mcp-gitnexus
   name: '@deepseek-ai/dsh-mcp-client'
   config:
     serverName: gitnexus
     transport: stdio
-    command: 'C:\Program Files\nodejs\node.exe'
-    args:
-      - 'C:\Program Files\nodejs\node_global\node_modules\gitnexus\dist\cli\index.js'
-      - mcp
+    command: gitnexus
+    args: [mcp]
 ```
+
+On Windows, `cliCommand: gitnexus` is resolved through `PATH`; the adapter then runs the bundled `node_modules/gitnexus/dist/cli/index.js` directly, avoiding a shell and keeping the search pattern out of `cmd.exe` parsing. An absolute Node script or executable is also accepted.
+
+## Bundled MCP registration
+
+The adapter is deliberately lightweight; the bundled `mcp-gitnexus` row keeps the full GitNexus MCP tool surface (`query`, `context`, `impact`, and related tools) available after the same plugin installation. The MCP command is intentionally `gitnexus`, not a machine-specific Node path. DSH's MCP client uses `cross-spawn`, which resolves the npm `.cmd` shim on Windows without a shell.
 
 ## Configuration
 
