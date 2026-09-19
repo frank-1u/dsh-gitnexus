@@ -171,6 +171,29 @@ staleTest('stale: honours enableStaleNotice=false', async () => {
   assert.equal(hasContext(await fire(execution(repo.dir, 'pwsh', { command: 'git commit -m "fixture"' }))), false)
 })
 
+staleTest('stale: reports a second commit that lands inside the notice TTL', async () => {
+  writeIndex('0'.repeat(40))
+  // The production default is a 10 minute TTL; two quick commits must both report.
+  const fire = harness({ staleNoticeTtlMs: 600000 })
+  const first = await fire(execution(repo.dir, 'pwsh', { command: 'git commit -m "fixture"' }))
+  assert.match(contextText(first), /index is stale/)
+
+  execFileSync('git', ['commit', '--allow-empty', '-m', 'move HEAD'], { cwd: repo.dir, stdio: 'ignore' })
+  repo.head = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo.dir }).toString().trim()
+
+  const second = await fire(execution(repo.dir, 'pwsh', { command: 'git commit -m "fixture"' }))
+  assert.match(contextText(second), /index is stale/)
+  // The second notice must name the new HEAD, not the superseded one.
+  assert.match(contextText(second), new RegExp(repo.head.slice(0, 7)))
+})
+
+staleTest('stale: does not repeat an unchanged notice inside the TTL', async () => {
+  writeIndex('0'.repeat(40))
+  const fire = harness({ staleNoticeTtlMs: 600000 })
+  assert.match(contextText(await fire(execution(repo.dir, 'pwsh', { command: 'git commit -m "fixture"' }))), /index is stale/)
+  assert.equal(hasContext(await fire(execution(repo.dir, 'pwsh', { command: 'git commit -m "fixture"' }))), false)
+})
+
 test('real GitNexus: augment returns graph context for an indexed repository', async t => {
   let resolvable = true
   try {
