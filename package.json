@@ -1,0 +1,46 @@
+{
+  "name": "dsh-gitnexus",
+  "version": "0.1.0",
+  "description": "Native DeepSeek Harness adapter that injects GitNexus graph context and stale-index notices.",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./patterns": "./lib/patterns.js",
+    "./status": "./lib/status.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "cordis.patch.yml",
+    "README.md",
+    "CONTEXT.md",
+    "docs/adr"
+  ],
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.2"
+  },
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "gitnexus",
+    "plugin",
+    "context"
+  ],
+  "license": "MIT",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh-llm": "0.1.5-rc.2",
+    "@deepseek-ai/schemastery": "3.18.2"
+  }
+}

@@ -1,0 +1,3 @@
+# Use a native DSH adapter for GitNexus
+
+DSH already ships Claude/Codex hook compatibility bridges, but their `PreToolUse additionalContext` path is not surfaced to the model and their tool payloads are deliberately shaped like the source hook runtime. We therefore chose a native Cordis plugin on `tools/post-execute`: it calls the installed GitNexus CLI directly and returns DSH `additionalContexts`, while a separately configured GitNexus MCP server retains full query tools. This preserves DSH's typed event model and avoids coupling the adapter to Claude/Codex hook dialects; the tradeoff is that search enrichment arrives after the search tool executes, not before it.
