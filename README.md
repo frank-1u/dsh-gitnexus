@@ -30,7 +30,13 @@ For local testing before publishing:
 dsh plugin --profile web add file:D:/Codes/dsh-gitnexus
 ```
 
-DSH Desktop owns the `desktop` profile exclusively. Install from its Plugin Manager after the package is published, or close Desktop and use its bundled DSH CLI once.
+DSH Desktop owns the `desktop` profile exclusively, and the DSH CLI inside the app bundle (`resources/app/node_modules/@deepseek-ai/dsh/lib/bin.js`) refuses `--profile desktop` outright, so closing Desktop and using that CLI does not work. Use the `dsh` command the app puts on `PATH` instead: it dispatches to `desktop-cli.js` and installs while Desktop is running.
+
+```sh
+dsh plugin --profile desktop add file:D:/Codes/dsh-gitnexus/dsh-gitnexus-<version>.tgz
+```
+
+Installed code is picked up on the next reload: toggle the plugin in Settings -> Plugin Inventory, or restart DSH Desktop.
 
 The plugin bundle patch contributes both the native adapter row and the GitNexus MCP row. After installation, no manual `cordis.patch.yml` edit is required:
 
