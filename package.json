@@ -15,7 +15,8 @@
     "cordis.patch.yml",
     "README.md",
     "CONTEXT.md",
-    "docs/adr"
+    "docs/adr",
+    "LICENSE"
   ],
   "scripts": {
     "test": "node --test test/*.test.js"
@@ -37,6 +38,11 @@
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
+    },
+    "compatibility": {
+      "dshReleases": {
+        "0.1.5-rc.2": "compatible"
+      }
     }
   },
   "dependencies": {

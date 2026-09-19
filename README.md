@@ -77,3 +77,5 @@ Failures are silent unless `debug: true`; they never turn the completed DSH tool
 ```sh
 npm test
 ```
+
+Tested with DeepSeek Harness `0.1.5-rc.2` and GitNexus `1.6.12`.
