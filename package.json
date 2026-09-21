@@ -1,6 +1,6 @@
 {
   "name": "dsh-gitnexus",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "description": "Native DeepSeek Harness adapter that injects GitNexus graph context and stale-index notices.",
   "type": "module",
   "main": "lib/index.js",

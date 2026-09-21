@@ -35,12 +35,16 @@ function runs(command, args, options = {}) {
 const gitPathFormat = runs('git', ['rev-parse', '--path-format=absolute', '--show-toplevel'], { cwd: repoRoot })
 
 /** Boot the adapter against a fake Cordis ctx and return its post-execute dispatcher. */
-function harness(config = {}, next = async () => ({ kind: 'accept' })) {
+function harness(config = {}, next = async () => ({ kind: 'accept' }), tools) {
   const listeners = new Map()
   // Resolve through the published schema so the adapter sees the same defaults
   // the DSH loader applies (enableAugment, enableStaleNotice, TTLs, ...).
   apply(
-    { on: (event, listener) => listeners.set(event, listener), logger: { info() {}, warn() {} } },
+    {
+      on: (event, listener) => listeners.set(event, listener),
+      logger: { info() {}, warn() {} },
+      ...(tools ? { tools } : {}),
+    },
     Config({ cliCommand: fixture('gitnexus-stub.mjs'), augmentTimeoutMs: 20000, staleTimeoutMs: 10000, ...config }),
   )
   const listener = listeners.get('tools/post-execute')
@@ -111,6 +115,28 @@ test('adapter: ignores short patterns and non-search tools', async () => {
 test('adapter: honours enableAugment=false', async () => {
   const fire = harness({ enableAugment: false })
   assert.equal(hasContext(await fire(execution(repoRoot, 'grep', { pattern: 'extractSearchPattern' }))), false)
+})
+
+test('adapter: points at the local CLI when no mcp__gitnexus__ tools are registered', async () => {
+  const fire = harness({}, undefined, { schemas: async () => [{ name: 'grep' }, { name: 'mcp__other__query' }] })
+  const decision = await fire(execution(repoRoot, 'grep', { pattern: 'extractSearchPattern' }))
+  assert.ok(hasContext(decision), 'augment context still injects')
+  assert.match(contextText(decision), /gitnexus query/)
+  assert.doesNotMatch(contextText(decision), /mcp__gitnexus__/)
+})
+
+test('adapter: stays silent about the CLI when GitNexus MCP tools are registered', async () => {
+  const fire = harness({}, undefined, { schemas: async () => [{ name: 'grep' }, { name: 'mcp__gitnexus__query' }] })
+  const decision = await fire(execution(repoRoot, 'grep', { pattern: 'extractSearchPattern' }))
+  assert.ok(hasContext(decision), 'augment context still injects')
+  assert.doesNotMatch(contextText(decision), /gitnexus query/)
+})
+
+test('adapter: an unreadable tool registry never triggers the CLI hint', async () => {
+  const fire = harness({}, undefined, { schemas: async () => { throw new Error('registry down') } })
+  const decision = await fire(execution(repoRoot, 'grep', { pattern: 'extractSearchPattern' }))
+  assert.ok(hasContext(decision), 'augment context still injects')
+  assert.doesNotMatch(contextText(decision), /gitnexus query/)
 })
 
 test('adapter: a failing GitNexus CLI never turns the tool result into an error', async () => {

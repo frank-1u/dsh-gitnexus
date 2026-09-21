@@ -6,10 +6,15 @@ import { fileURLToPath } from 'node:url'
 const root = new URL('..', import.meta.url)
 const patch = fs.readFileSync(fileURLToPath(new URL('cordis.patch.yml', root)), 'utf8')
 
-test('bundle registers the native adapter and GitNexus MCP together', () => {
+test('bundle registers only the native adapter row', () => {
   assert.match(patch, /- id: gitnexus-context-injector\n\s+name: dsh-gitnexus/)
-  assert.match(patch, /- id: mcp-gitnexus\n\s+name: '@deepseek-ai\/dsh-mcp-client'/)
-  assert.match(patch, /serverName: gitnexus/)
-  assert.match(patch, /command: gitnexus/)
-  assert.match(patch, /args: \[mcp\]/)
+  assert.match(patch, /cliCommand: gitnexus/)
+})
+
+test('bundle no longer auto-registers the GitNexus MCP row', () => {
+  // The MCP registration flaked in DSH Desktop ("connected but no tools
+  // registered"). The adapter now detects the missing MCP surface and points
+  // the agent at the local CLI instead (see lib/index.js).
+  assert.doesNotMatch(patch, /mcp-gitnexus/)
+  assert.doesNotMatch(patch, /dsh-mcp-client/)
 })

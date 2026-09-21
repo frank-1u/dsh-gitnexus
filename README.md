@@ -14,6 +14,8 @@ and attach the returned `[GitNexus] ...` context as a DSH `additionalContext` fo
 
 After a successful `git commit`, `git merge`, `git rebase`, `git cherry-pick`, or `git pull`, it reads lightweight GitNexus registry metadata and, when the indexed commit no longer matches `HEAD`, tells the agent to run `gitnexus analyze --index-only`.
 
+When no `mcp__gitnexus__*` tools are registered in the session, the first injected context also carries a short guide to the equivalent local `gitnexus` CLI commands (see [Graph access without MCP](#graph-access-without-mcp)).
+
 This is intentionally a **post-result adapter**. DSH's typed tool pipeline does not expose GitNexus-style pre-tool `additionalContext`; attaching context after the search is the supported model-visible channel.
 
 ## Install into a profile
@@ -38,7 +40,7 @@ dsh plugin --profile desktop add file:D:/Codes/dsh-gitnexus/dsh-gitnexus-<versio
 
 Installed code is picked up on the next reload: toggle the plugin in Settings -> Plugin Inventory, or restart DSH Desktop.
 
-The plugin bundle patch contributes both the native adapter row and the GitNexus MCP row. After installation, no manual `cordis.patch.yml` edit is required:
+The plugin bundle patch contributes the native adapter row only. After installation, no manual `cordis.patch.yml` edit is required:
 
 ```yaml
 - id: gitnexus-context-injector
@@ -47,7 +49,21 @@ The plugin bundle patch contributes both the native adapter row and the GitNexus
     cliCommand: gitnexus
     enableAugment: true
     enableStaleNotice: true
+```
 
+On Windows, `cliCommand: gitnexus` is resolved through `PATH`; the adapter then runs the bundled `node_modules/gitnexus/dist/cli/index.js` directly, avoiding a shell and keeping the search pattern out of `cmd.exe` parsing. An absolute Node script or executable is also accepted.
+
+Inside DSH Desktop the host process is Electron, whose embedded Node reports a different `NODE_MODULE_VERSION` than the system Node. GitNexus's native LadybugDB addon fails to initialize there ("DLL initialization routine failed"), so the adapter runs the CLI through a real `node` — the shim's sibling `node.exe` first, then `node` on `PATH` — and only falls back to the Electron binary.
+
+## Graph access without MCP
+
+The bundle deliberately does **not** register a GitNexus MCP row. In DSH Desktop the `dsh-mcp-client` row could settle in a state that stays "connected" with zero tools registered (the loader contains a failed startup tool-sync, the reconnect loop never fires, and the inventory shows "已连接但未注册任何工具"), and that failure mode is outside this plugin's control.
+
+Instead, the adapter watches the session's tool registry: when no `mcp__gitnexus__*` tools are registered, it prepends a short CLI guide (`gitnexus query` / `context` / `impact` / `detect-changes`) to the first context it injects — the agent reaches the exact same graph engine through the shell. The check is cached (`cliHintTtlMs`) and only a definite miss triggers the hint; an unreadable registry never does.
+
+If you prefer the native MCP tool surface anyway, register it yourself in the profile's `cordis.patch.yml` (add `failOnStartupError: true` so a failed startup sync is retried instead of silently contained):
+
+```yaml
 - id: mcp-gitnexus
   name: '@deepseek-ai/dsh-mcp-client'
   config:
@@ -55,15 +71,10 @@ The plugin bundle patch contributes both the native adapter row and the GitNexus
     transport: stdio
     command: gitnexus
     args: [mcp]
+    failOnStartupError: true
 ```
 
-On Windows, `cliCommand: gitnexus` is resolved through `PATH`; the adapter then runs the bundled `node_modules/gitnexus/dist/cli/index.js` directly, avoiding a shell and keeping the search pattern out of `cmd.exe` parsing. An absolute Node script or executable is also accepted.
-
-Inside DSH Desktop the host process is Electron, whose embedded Node reports a different `NODE_MODULE_VERSION` than the system Node. GitNexus's native LadybugDB addon fails to initialize there ("DLL initialization routine failed"), so the adapter runs the CLI through a real `node` — the shim's sibling `node.exe` first, then `node` on `PATH` — and only falls back to the Electron binary.
-
-## Bundled MCP registration
-
-The adapter is deliberately lightweight; the bundled `mcp-gitnexus` row keeps the full GitNexus MCP tool surface (`query`, `context`, `impact`, and related tools) available after the same plugin installation. The MCP command is intentionally `gitnexus`, not a machine-specific Node path. DSH's MCP client uses `cross-spawn`, which resolves the npm `.cmd` shim on Windows without a shell.
+With that row live the adapter detects the registered `mcp__gitnexus__*` tools and stops emitting the CLI hint.
 
 ## Configuration
 
@@ -72,6 +83,8 @@ The adapter is deliberately lightweight; the bundled `mcp-gitnexus` row keeps th
 | `cliCommand` | `gitnexus` | GitNexus executable or Node CLI script |
 | `enableAugment` | `true` | Attach graph context after searches |
 | `enableStaleNotice` | `true` | Check/index reminders after successful git mutations |
+| `enableCliFallbackHint` | `true` | Point the agent at the local CLI when no GitNexus MCP tools are registered |
+| `cliHintTtlMs` | `1800000` | How long an MCP-absent verdict is cached before re-checking |
 | `augmentTimeoutMs` | `7000` | Upper bound for one augment call |
 | `staleTimeoutMs` | `3000` | Upper bound for the git/registry staleness check |
 | `contextMaxChars` | `12000` | Maximum injected context characters |
