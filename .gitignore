@@ -4,3 +4,6 @@ node_modules/
 .gitnexus/
 .tmp-dsh-home/
 .tmp-smoke.mjs
+
+# Build artifacts (npm pack output)
+*.tgz
