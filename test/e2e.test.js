@@ -76,6 +76,62 @@ const execution = (cwd, name, args) => ({
 const hasContext = decision => Array.isArray(decision?.additionalContexts) && decision.additionalContexts.length > 0
 const contextText = decision => JSON.stringify(decision?.additionalContexts ?? [])
 
+// The stub appends `cwd=<process.cwd()>` to its `[GitNexus]` line, so the
+// assertions observe the directory GitNexus really ran in. Compare real paths:
+// a macOS temp directory is reached through the /private symlink.
+const reportedCwd = decision => {
+  for (const message of decision?.additionalContexts ?? []) {
+    for (const block of Array.isArray(message?.content) ? message.content : []) {
+      if (block?.type !== 'text' || typeof block.text !== 'string') continue
+      const match = /\bcwd=([^\n]+)\s*$/.exec(block.text)
+      if (match) return match[1]
+    }
+  }
+  return undefined
+}
+
+const realDirectory = value => {
+  try {
+    return fs.realpathSync(value)
+  } catch {
+    return path.resolve(value)
+  }
+}
+
+function assertRanIn(decision, directory) {
+  const actual = reportedCwd(decision)
+  assert.ok(actual, 'the augment fixture must report its working directory')
+  assert.equal(realDirectory(actual), realDirectory(directory), `GitNexus ran in ${actual}, expected ${directory}`)
+}
+
+// Every shell-resolution exercise runs against this throwaway tree so the
+// expected absolute directories are independent of the checkout.
+const augmentRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-gitnexus-augment-root-'))
+after(() => fs.rmSync(augmentRoot, { recursive: true, force: true }))
+const inRoot = (...segments) => path.join(augmentRoot, ...segments)
+fs.mkdirSync(inRoot('repo', 'nested'), { recursive: true })
+fs.mkdirSync(inRoot('absolute'), { recursive: true })
+fs.mkdirSync(inRoot('with space'), { recursive: true })
+fs.mkdirSync(inRoot('home', 'repo'), { recursive: true })
+
+// `~` expands against the home directory of the process that runs the adapter.
+// Point it at the sandbox for the duration of one exercise and restore it.
+async function withHome(home, body) {
+  const saved = { HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE }
+  process.env.HOME = home
+  process.env.USERPROFILE = home
+  try {
+    return await body()
+  } finally {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
+  }
+}
+
+const shell = (command, workdir) => ({ ...(workdir === undefined ? {} : { workdir }), command })
+
 test('runner: resolves an absolute Node CLI script to the current node binary', () => {
   const resolved = prepareCliRunner(fixture('gitnexus-stub.mjs'))
   assert.equal(resolved.program, process.execPath)
@@ -203,6 +259,118 @@ test('status: a tuiStatus without set is ignored', async () => {
   assert.ok(hasContext(decision))
 })
 
+test('augment root: a leading literal cd selects the GitNexus directory', async () => {
+  const decision = await harness()(execution(augmentRoot, 'bash', { command: 'cd repo && grep needle' }))
+  assert.ok(hasContext(decision))
+  assertRanIn(decision, inRoot('repo'))
+})
+
+test('augment root: a relative workdir chooses the GitNexus directory', async () => {
+  const decision = await harness()(execution(augmentRoot, 'bash', shell('grep needle', 'repo')))
+  assert.ok(hasContext(decision))
+  assertRanIn(decision, inRoot('repo'))
+})
+
+test('augment root: an absolute workdir chooses the GitNexus directory', async () => {
+  const decision = await harness()(execution(augmentRoot, 'bash', shell('grep needle', inRoot('absolute'))))
+  assert.ok(hasContext(decision))
+  assertRanIn(decision, inRoot('absolute'))
+})
+
+test('augment root: a leading cd is applied on top of a declared workdir', async () => {
+  const decision = await harness()(execution(augmentRoot, 'bash', shell('cd nested && grep needle', 'repo')))
+  assert.ok(hasContext(decision))
+  assertRanIn(decision, inRoot('repo', 'nested'))
+})
+
+test('augment root: cd separated by ; or a newline is applied', async () => {
+  const fire = harness()
+  assertRanIn(await fire(execution(augmentRoot, 'bash', { command: 'cd repo; grep needle' })), inRoot('repo'))
+  assertRanIn(await fire(execution(augmentRoot, 'bash', { command: 'cd repo\ngrep needle' })), inRoot('repo'))
+})
+
+test('augment root: consecutive leading cd segments are applied in order', async () => {
+  const decision = await harness()(execution(augmentRoot, 'bash', { command: 'cd repo && cd nested && grep needle' }))
+  assert.ok(hasContext(decision))
+  assertRanIn(decision, inRoot('repo', 'nested'))
+})
+
+test('augment root: a quoted target may contain spaces', async () => {
+  const decision = await harness()(execution(augmentRoot, 'bash', { command: 'cd "with space" && grep needle' }))
+  assert.ok(hasContext(decision))
+  assertRanIn(decision, inRoot('with space'))
+})
+
+test('augment root: ~ expands to the home directory', async () => {
+  const home = inRoot('home')
+  const decision = await withHome(home, () => harness()(execution(augmentRoot, 'bash', { command: 'cd ~/repo && grep needle' })))
+  assert.ok(hasContext(decision))
+  assertRanIn(decision, inRoot('home', 'repo'))
+})
+
+test('augment root: variable expansion and history cd fall back to the session cwd', async () => {
+  const fire = harness()
+  assertRanIn(await fire(execution(augmentRoot, 'bash', { command: 'cd $TARGET && grep needle' })), augmentRoot)
+  assertRanIn(await fire(execution(augmentRoot, 'bash', { command: 'cd - && grep needle' })), augmentRoot)
+  assertRanIn(await fire(execution(augmentRoot, 'bash', { command: 'cd `pwd` && grep needle' })), augmentRoot)
+})
+
+test('augment root: redirection after a target falls back to the session cwd', async () => {
+  const fire = harness()
+  assertRanIn(await fire(execution(augmentRoot, 'bash', { command: 'cd repo > /dev/null && grep needle' })), augmentRoot)
+  assertRanIn(await fire(execution(augmentRoot, 'bash', { command: 'cd repo>log && grep needle' })), augmentRoot)
+})
+
+test('augment root: an || branch falls back to the session cwd', async () => {
+  const decision = await harness()(execution(augmentRoot, 'bash', { command: 'cd repo || cd absolute && grep needle' }))
+  assert.ok(hasContext(decision))
+  assertRanIn(decision, augmentRoot)
+})
+
+test('augment root: a partial chain is discarded whole', async () => {
+  const fire = harness()
+  assertRanIn(await fire(execution(augmentRoot, 'bash', { command: 'cd repo && cd $TARGET && grep needle' })), augmentRoot)
+  assertRanIn(await fire(execution(augmentRoot, 'bash', { command: 'cd repo && cd - && grep needle' })), augmentRoot)
+})
+
+test('augment root: an unresolvable cd falls back to the declared workdir', async () => {
+  const decision = await harness()(execution(augmentRoot, 'bash', shell('cd $TARGET && grep needle', 'repo')))
+  assert.ok(hasContext(decision))
+  assertRanIn(decision, inRoot('repo'))
+})
+
+test('augment root: a cd after another command is ignored', async () => {
+  const decision = await harness()(execution(augmentRoot, 'bash', { command: 'echo start && cd repo && grep needle' }))
+  assert.ok(hasContext(decision))
+  assertRanIn(decision, augmentRoot)
+})
+
+test('augment root: pushd and Set-Location end the chain', async () => {
+  const fire = harness()
+  assertRanIn(await fire(execution(augmentRoot, 'bash', { command: 'pushd repo && grep needle' })), augmentRoot)
+  assertRanIn(await fire(execution(augmentRoot, 'pwsh', { command: 'Set-Location repo; grep needle' })), augmentRoot)
+})
+
+test('augment root: ~user, globs and unquoted backslashes fall back to the session cwd', async () => {
+  const fire = harness()
+  assertRanIn(await fire(execution(augmentRoot, 'bash', { command: 'cd ~nobody/repo && grep needle' })), augmentRoot)
+  assertRanIn(await fire(execution(augmentRoot, 'bash', { command: 'cd repo* && grep needle' })), augmentRoot)
+  assertRanIn(await fire(execution(augmentRoot, 'bash', { command: 'cd repo\\ dir && grep needle' })), augmentRoot)
+  assertRanIn(await fire(execution(augmentRoot, 'bash', { command: 'cd repo & grep needle' })), augmentRoot)
+})
+
+test('augment root: a quoted target with expansion or escapes falls back to the session cwd', async () => {
+  const fire = harness()
+  assertRanIn(await fire(execution(augmentRoot, 'bash', { command: 'cd "$TARGET" && grep needle' })), augmentRoot)
+  assertRanIn(await fire(execution(augmentRoot, 'bash', { command: "cd 'a\\ b' && grep needle" })), augmentRoot)
+})
+
+test('augment root: cd with no target or an option falls back to the session cwd', async () => {
+  const fire = harness()
+  assertRanIn(await fire(execution(augmentRoot, 'bash', { command: 'cd && grep needle' })), augmentRoot)
+  assertRanIn(await fire(execution(augmentRoot, 'bash', { command: 'cd -- repo && grep needle' })), augmentRoot)
+})
+
 const repo = { dir: null, head: null }
 if (gitPathFormat) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-gitnexus-e2e-'))
@@ -222,11 +390,40 @@ if (gitPathFormat) {
 const writeIndex = commit =>
   fs.writeFileSync(path.join(repo.dir, '.gitnexus', 'gitnexus.json'), JSON.stringify({ lastCommit: commit, indexedAt: '2026-01-01T00:00:00.000Z' }))
 
+// A second repository the session only reaches through `cd`, used to prove the
+// stale notice follows the Augment Root instead of the session cwd.
+const cdRepo = { dir: null, head: null }
+if (gitPathFormat) {
+  const dir = inRoot('cd-repo')
+  fs.mkdirSync(dir, { recursive: true })
+  const git = (...args) => execFileSync('git', args, { cwd: dir, stdio: 'ignore' })
+  git('init')
+  git('config', 'user.email', 'e2e@example.com')
+  git('config', 'user.name', 'dsh-gitnexus e2e')
+  fs.writeFileSync(path.join(dir, 'tracked.txt'), 'fixture\n')
+  git('add', '.')
+  git('commit', '-m', 'fixture')
+  fs.mkdirSync(path.join(dir, '.gitnexus'), { recursive: true })
+  cdRepo.dir = dir
+  cdRepo.head = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: dir }).toString().trim()
+}
+
 const staleTest = (title, body) =>
   test(title, async t => {
     if (!gitPathFormat) return t.skip('git without --path-format=absolute')
     return body()
   })
+
+staleTest('stale: a leading cd points the notice at that repository index', async () => {
+  const indexed = 'b'.repeat(40)
+  fs.writeFileSync(path.join(cdRepo.dir, '.gitnexus', 'gitnexus.json'), JSON.stringify({ lastCommit: indexed, indexedAt: '2026-01-01T00:00:00.000Z' }))
+  // The session cwd is not a repository at all: a notice can only come from the
+  // repository the command cd'd into.
+  const decision = await harness()(execution(augmentRoot, 'pwsh', { command: 'cd cd-repo && git commit -m "fixture"' }))
+  assert.match(contextText(decision), /index is stale/)
+  assert.match(contextText(decision), /bbbbbbb/)
+  assert.match(contextText(decision), new RegExp(cdRepo.head.slice(0, 7)))
+})
 
 staleTest('stale: notices an index that no longer matches HEAD', async () => {
   writeIndex('0'.repeat(40))
