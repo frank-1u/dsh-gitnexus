@@ -32,19 +32,19 @@ Only statically resolvable forms count; the adapter never models shell flow:
 
 - Segments must be consecutive at the start of the command, separated by `&&`, `;`, or a newline — `cd repo && grep …`, `cd repo; rg …`, or `cd repo` newline `rg …`.
 - `cd a && cd b` applies both in order. A `cd` after any other command is ignored, and the earlier directory stands.
-- A target is one bare literal without shell metacharacters/expansion, or one single- or double-quoted string without escapes. `~` and `~/...` expand to the home directory; `~user` is not supported.
-- On Windows, `pwsh` treats backslashes as path separators, so a Windows absolute target such as `C:\repo` is accepted. On POSIX a backslash is an escape marker and voids the chain.
+- A target is one bare literal without shell metacharacters/expansion, one single-quoted string, or one double-quoted string. A single-quoted target is fully literal: `$`, backticks and backslashes are ordinary characters, with no escape processing. A double-quoted target containing `$`, backticks or a backslash is rejected, because those expand or escape. `~` and `~/...` expand to the home directory; `~user` is not supported.
+- On Windows, `pwsh` treats backslashes as path separators, so a Windows absolute target such as `C:\repo` is accepted. On POSIX a backslash outside single quotes is an escape marker and voids the chain.
 
 The whole chain is discarded — never a partial result, the base directory wins — when it contains any of:
 
-- `$VAR`, `$`, backticks, or a quoted target containing them
+- `$VAR`, `$`, or backticks in a bare or double-quoted target
 - `cd -`, `cd --`, `cd` with no target, or a target starting with `-`
 - output redirection (`cd a > log` or `cd a>log`), a pipe, `||`, a lone `&`, grouping/subshells
 - glob or brace characters (`*`, `?`, `[`, `]`, `{`, `}`)
-- backslash escapes (POSIX), a quoted target with escapes, or an empty/multi-token target
+- a backslash escape (POSIX) in a bare or double-quoted target, or an empty/multi-token target
 - a leading `cd` chain that starts after another command (`echo x && cd repo`)
 
-`pushd` and `Set-Location` are not `cd`, so they end the chain. Persistent shell tools whose working directory survives across calls are not supported and must pass `workdir`. When a call declares no directory, the adapter uses the session CWD and never guesses.
+`pushd` and `Set-Location` are not `cd`, so they end the chain. Persistent shell tools whose working directory survives across calls are not supported; such tools expose no `workdir`, so their calls fall back to the session CWD. When a call declares no directory, the adapter uses the session CWD and never guesses.
 
 The stale-index notice uses the same resolution, so `cd repo && git commit` checks that repository's index.
 
