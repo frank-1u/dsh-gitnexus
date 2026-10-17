@@ -7,3 +7,6 @@ node_modules/
 
 # Build artifacts (npm pack output)
 *.tgz
+
+# Local agent worktrees
+.worktrees/
