@@ -24,6 +24,10 @@ _Avoid_: execution cwd, working directory
 The `workdir` argument a shell tool call passes to state the directory it runs in; it is the base the command's leading `cd` chain is applied to.
 _Avoid_: session directory, inferred cwd
 
+**Declared Search Path**:
+The `path` argument a `grep`/`glob` call uses to scope its search, resolved against the Session CWD: a directory is used as-is, a regular file resolves to its parent directory, and a missing or unreadable path falls back to the Session CWD.
+_Avoid_: search root, scoped directory
+
 **Shell-Declared Directory**:
 The directory a shell command enters through its leading literal `cd` segments, resolved statically without executing the shell.
 _Avoid_: parsed cwd, shell inference

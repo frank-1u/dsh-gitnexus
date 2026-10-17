@@ -22,7 +22,9 @@ This is intentionally a **post-result adapter**. DSH's typed tool pipeline does 
 
 GitNexus runs in the call's **Augment Root**, which is not necessarily the session directory. Resolution order:
 
-1. A directory the call declares: `workdir` for `bash`/`pwsh`, `path` for `grep`/`glob` (a file `path` resolves to its directory). A relative path resolves against the session CWD.
+1. A directory the call declares, resolved against the session CWD:
+   - `workdir` for `bash`/`pwsh`.
+   - `path` for `grep`/`glob`: a directory is used as-is, a regular file resolves to its parent directory, and a path that does not exist or cannot be read falls back to the session CWD.
 2. A literal leading `cd` chain in the shell command, applied in order on top of `workdir`.
 3. The session CWD.
 

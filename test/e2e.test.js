@@ -113,6 +113,9 @@ fs.mkdirSync(inRoot('repo', 'nested'), { recursive: true })
 fs.mkdirSync(inRoot('absolute'), { recursive: true })
 fs.mkdirSync(inRoot('with space'), { recursive: true })
 fs.mkdirSync(inRoot('home', 'repo'), { recursive: true })
+// A regular file inside the tree: a search `path` that names it resolves to
+// its parent directory instead of the session cwd.
+fs.writeFileSync(inRoot('repo', 'nested', 'target.txt'), 'needle\n')
 
 // `~` expands against the home directory of the process that runs the adapter.
 // Point it at the sandbox for the duration of one exercise and restore it.
@@ -369,6 +372,67 @@ test('augment root: cd with no target or an option falls back to the session cwd
   const fire = harness()
   assertRanIn(await fire(execution(augmentRoot, 'bash', { command: 'cd && grep needle' })), augmentRoot)
   assertRanIn(await fire(execution(augmentRoot, 'bash', { command: 'cd -- repo && grep needle' })), augmentRoot)
+})
+
+test('augment root: a grep path directory chooses the GitNexus directory', async () => {
+  const fire = harness()
+  // Relative paths resolve against the session cwd; an absolute path is used
+  // as declared. Both name a directory, which is the root itself.
+  assertRanIn(await fire(execution(augmentRoot, 'grep', { pattern: 'needle', path: 'repo' })), inRoot('repo'))
+  assertRanIn(await fire(execution(augmentRoot, 'grep', { pattern: 'needle', path: inRoot('absolute') })), inRoot('absolute'))
+})
+
+test('augment root: a grep path file resolves to its parent directory', async () => {
+  const decision = await harness()(execution(augmentRoot, 'grep', { pattern: 'needle', path: path.join('repo', 'nested', 'target.txt') }))
+  assert.ok(hasContext(decision))
+  assertRanIn(decision, inRoot('repo', 'nested'))
+})
+
+test('augment root: a glob path directory chooses the GitNexus directory', async () => {
+  // `src/*repo.mjs` leaves a stem of 3+ characters, so the search itself is
+  // interesting; the directory under test comes from `path`.
+  const decision = await harness()(execution(augmentRoot, 'glob', { pattern: 'src/*repo.mjs', path: inRoot('absolute') }))
+  assert.ok(hasContext(decision))
+  assertRanIn(decision, inRoot('absolute'))
+})
+
+test('augment root: a missing search path falls back to the session cwd', async () => {
+  const decision = await harness()(execution(augmentRoot, 'grep', { pattern: 'needle', path: 'missing-repo' }))
+  assert.ok(hasContext(decision))
+  assertRanIn(decision, augmentRoot)
+})
+
+test('augment root: a search path below a regular file falls back to the session cwd', async () => {
+  const decision = await harness()(execution(augmentRoot, 'grep', { pattern: 'needle', path: path.join('repo', 'nested', 'target.txt', 'child') }))
+  assert.ok(hasContext(decision))
+  assertRanIn(decision, augmentRoot)
+})
+
+test('augment root: an unreadable search path falls back to the session cwd', async t => {
+  const unreadable = inRoot('unreadable')
+  fs.mkdirSync(unreadable, { recursive: true })
+  fs.writeFileSync(path.join(unreadable, 'target.txt'), 'needle\n')
+  try {
+    fs.chmodSync(unreadable, 0o000)
+    let denied = false
+    try {
+      fs.statSync(path.join(unreadable, 'target.txt'))
+    } catch {
+      denied = true
+    }
+    if (!denied) return t.skip('filesystem permissions do not deny traversal')
+    const decision = await harness()(execution(augmentRoot, 'grep', { pattern: 'needle', path: path.join('unreadable', 'target.txt') }))
+    assert.ok(hasContext(decision))
+    assertRanIn(decision, augmentRoot)
+  } finally {
+    fs.chmodSync(unreadable, 0o755)
+  }
+})
+
+test('augment root: an empty search path uses the session cwd', async () => {
+  const fire = harness()
+  assertRanIn(await fire(execution(augmentRoot, 'grep', { pattern: 'needle', path: '' })), augmentRoot)
+  assertRanIn(await fire(execution(augmentRoot, 'glob', { pattern: 'src/*repo.mjs' })), augmentRoot)
 })
 
 const repo = { dir: null, head: null }
