@@ -1,10 +1,19 @@
+# The canonical adapter row. 0.4.2+ is installed as a plain dependency (no
+# `dsh.bundle`), so this block belongs in the profile's own patch layer —
+# `~/.dsh/profiles/<profile>/cordis.patch.yml` — not in `dsh.profile.bundles`.
+# See docs/adr/0003-gitnexus-row-in-profile-patch.md.
 - insert:
     - id: gitnexus-context-injector
       name: dsh-gitnexus
+      # Inert when the package is not installed, so `dsh plugin remove` cannot
+      # leave the row pointing at a missing module.
+      disabled: !!js (() => { try { return !process.getBuiltinModule('node:module').createRequire(ctx.baseUrl).resolve('dsh-gitnexus/package.json') } catch { return true } })()
       config:
         cliCommand: gitnexus
         enableAugment: true
         enableStaleNotice: true
+        enableTuiStatus: true
+        tuiStatusLingerMs: 4000
         augmentTimeoutMs: 7000
         staleTimeoutMs: 3000
         contextMaxChars: 12000
@@ -12,4 +21,3 @@
         staleNoticeTtlMs: 600000
         maxConcurrent: 2
         debug: false
-

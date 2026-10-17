@@ -11,6 +11,11 @@ test('bundle registers only the native adapter row', () => {
   assert.match(patch, /cliCommand: gitnexus/)
 })
 
+test('bundle exposes the TUI hook-status defaults', () => {
+  assert.match(patch, /enableTuiStatus: true/)
+  assert.match(patch, /tuiStatusLingerMs: 4000/)
+})
+
 test('bundle no longer auto-registers the GitNexus MCP row', () => {
   // The MCP registration flaked in DSH Desktop ("connected but no tools
   // registered"). The adapter now detects the missing MCP surface and points

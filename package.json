@@ -1,13 +1,14 @@
 {
   "name": "dsh-gitnexus",
-  "version": "0.3.0",
-  "description": "Native DeepSeek Harness adapter that injects GitNexus graph context and stale-index notices.",
+  "version": "0.4.2",
+  "description": "Native DeepSeek Harness adapter that injects GitNexus graph context, stale-index notices, and a TUI hook status.",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
     ".": "./lib/index.js",
     "./patterns": "./lib/patterns.js",
     "./status": "./lib/status.js",
+    "./tui-status": "./lib/tui-status.js",
     "./package.json": "./package.json"
   },
   "files": [
@@ -25,7 +26,20 @@
     "node": ">=22.19.0"
   },
   "peerDependencies": {
-    "@deepseek-ai/cordis": "^4.0.2"
+    "@deepseek-ai/cordis": "^4.0.2",
+    "@deepseek-ai/dsh-llm": "^0.1.7-rc.2 || ^0.2.0-rc.1",
+    "@deepseek-ai/schemastery": "^3.18.1"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/cordis": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-llm": {
+      "optional": true
+    },
+    "@deepseek-ai/schemastery": {
+      "optional": true
+    }
   },
   "keywords": [
     "deepseek-harness",
@@ -36,18 +50,13 @@
   ],
   "license": "MIT",
   "dsh": {
-    "bundle": {
-      "patch": "./cordis.patch.yml"
-    },
     "compatibility": {
       "dshReleases": {
-        "0.1.5-rc.2": "compatible"
+        "0.1.5-rc.2": "compatible",
+        "0.1.7-rc.2": "compatible",
+        "0.2.0-rc.2": "compatible"
       }
     }
-  },
-  "dependencies": {
-    "@deepseek-ai/dsh-llm": "0.1.5-rc.2",
-    "@deepseek-ai/schemastery": "3.18.2"
   },
   "publishConfig": {
     "access": "public"

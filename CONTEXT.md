@@ -20,6 +20,18 @@ _Avoid_: pre-tool hook
 A model-visible reminder that the current Git HEAD no longer matches the indexed GitNexus commit.
 _Avoid_: automatic reindex
 
+**Hook Status Line**:
+A `ctx.tuiStatus` contribution above the TUI prompt that shows the adapter's post-execute work and its outcome.
+_Avoid_: Claude hook, hook shim, pre-tool hook
+
+**Peer Runtime Dependency**:
+A harness package the adapter imports but never installs (`@deepseek-ai/cordis`, `@deepseek-ai/dsh-llm`, `@deepseek-ai/schemastery`); the host supplies exactly one module instance.
+_Avoid_: vendored runtime, bundled dependency, second copy
+
+**Profile Patch Activation**:
+The install shape for profiles whose host cannot compose third-party bundles (dsh-tui 0.16.0): the package is a plain dependency and its adapter row is inserted from the profile's `cordis.patch.yml`.
+_Avoid_: profile bundle
+
 **Bundled MCP Registration**:
 An installed plugin's declaration that a named MCP server should become part of the same DSH profile.
 _Avoid_: manual MCP patch, post-install setup step

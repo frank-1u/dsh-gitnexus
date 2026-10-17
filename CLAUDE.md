@@ -42,3 +42,23 @@ This project is indexed by GitNexus as **dsh-gitnexus** (154 symbols, 412 relati
 | Index, status, clean, wiki CLI commands | `.claude/skills/gitnexus-cli/SKILL.md` |
 
 <!-- gitnexus:end -->
+
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default five canonical roles (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: the glossary is `CONTEXT.md`, decisions live in `docs/adr/`. See `docs/agents/domain.md`.
+
+## Augment Root
+
+Resolve a tool call's Augment Root before running GitNexus: a declared `workdir` (shell tools, with a literal leading `cd` chain applied on top), a declared `path` (search tools; a file resolves to its directory), then the session cwd. Only a literal leading `cd` counts — never model shell flow (`$VAR`, backticks, `cd -`, redirects, `||`, `pushd`, `Set-Location`, mid-command or later `cd`). When a call declares no directory, use the session cwd and never guess. Changes to this behavior must update the `tools/post-execute` end-to-end tests.
+
+Status: specified in #1; implementation pending.

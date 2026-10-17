@@ -1,6 +1,6 @@
 # dsh-gitnexus
 
-Native [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) plugin that adds GitNexus graph context and stale-index reminders to DSH Desktop sessions.
+Native [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) plugin that adds GitNexus graph context, stale-index reminders, and a Claude Code-style hook status line to DeepSeek Harness sessions.
 
 ## What it does
 
@@ -17,6 +17,20 @@ After a successful `git commit`, `git merge`, `git rebase`, `git cherry-pick`, o
 When no `mcp__gitnexus__*` tools are registered in the session, the first injected context also carries a short guide to the equivalent local `gitnexus` CLI commands (see [Graph access without MCP](#graph-access-without-mcp)).
 
 This is intentionally a **post-result adapter**. DSH's typed tool pipeline does not expose GitNexus-style pre-tool `additionalContext`; attaching context after the search is the supported model-visible channel.
+
+## Hook status in dsh-TUI
+
+A profile composed with `dsh-tui` exposes `ctx.tuiStatus`, a keyed status line above the prompt. The adapter publishes the state of its post-execute work there, in the spirit of Claude Code's hook status:
+
+| State | Line |
+| --- | --- |
+| `gitnexus augment` running | `GitNexus · searching graph for "pattern"` |
+| context attached | `GitNexus ✓ context +1.2k` |
+| augment failed | `GitNexus ✗ augment timed out` / `... (exit 3)` |
+| stale index | `GitNexus ⚠ index stale (1111111 → 2222222)` |
+| quick work, no context | nothing is written |
+
+The running line waits 250 ms before appearing, so short calls do not flash; an outcome lingers for `tuiStatusLingerMs` and then clears. The controller resolves `ctx.tuiStatus` on every write, so a TUI row that mounts after this plugin still gets the line, and profiles without the service (Web, headless) stay inert. Set `enableTuiStatus: false` to disable it.
 
 ## Install into a profile
 
@@ -40,16 +54,41 @@ dsh plugin --profile desktop add file:D:/Codes/dsh-gitnexus/dsh-gitnexus-<versio
 
 Installed code is picked up on the next reload: toggle the plugin in Settings -> Plugin Inventory, or restart DSH Desktop.
 
-The plugin bundle patch contributes the native adapter row only. After installation, no manual `cordis.patch.yml` edit is required:
+### Activate the row from the profile patch
+
+`dsh-gitnexus` 0.4.2 ships as a **plain dependency**, not as a profile bundle: it deliberately declares no `dsh.bundle`. dsh-tui 0.16.0 composes any third-party bundle too early and installs its root-capability guard before the profile has activated, which makes every core plugin fail with `root.effect is unavailable from a plugin activation` (evidence and the exact call chain in [ADR 0003](docs/adr/0003-gitnexus-row-in-profile-patch.md)). `dsh plugin add` therefore prints:
+
+```text
+dsh: warning: dsh-gitnexus declares no dsh.bundle — installed as a plain dependency, not a profile layer
+```
+
+and the adapter row is inserted from the profile's own patch layer instead — `~/.dsh/profiles/<profile>/cordis.patch.yml`. The repository's [`cordis.patch.yml`](cordis.patch.yml) is the canonical row; append this to the patch list:
 
 ```yaml
-- id: gitnexus-context-injector
-  name: dsh-gitnexus
-  config:
-    cliCommand: gitnexus
-    enableAugment: true
-    enableStaleNotice: true
+- insert:
+    - id: gitnexus-context-injector
+      name: dsh-gitnexus
+      # Inert when the package is not installed, so `dsh plugin remove` cannot
+      # leave the row pointing at a missing module.
+      disabled: !!js (() => { try { return !process.getBuiltinModule('node:module').createRequire(ctx.baseUrl).resolve('dsh-gitnexus/package.json') } catch { return true } })()
+      config:
+        cliCommand: gitnexus
+        enableAugment: true
+        enableStaleNotice: true
+        enableTuiStatus: true
+        tuiStatusLingerMs: 4000
+        augmentTimeoutMs: 7000
+        staleTimeoutMs: 3000
+        contextMaxChars: 12000
+        cacheTtlMs: 300000
+        staleNoticeTtlMs: 600000
+        maxConcurrent: 2
+        debug: false
 ```
+
+The patch layer survives `dsh plugin add/remove` of the package and dsh-tui updates. Once dsh-tui defers its root-capability guard before assembling third-party bundles, the package can return to declaring `dsh.bundle` and this step disappears.
+
+Every harness package this plugin touches (`@deepseek-ai/cordis`, `@deepseek-ai/dsh-llm`, `@deepseek-ai/schemastery`) is a **peer dependency**, never a regular one. A plugin that vendors them installs a second harness runtime, and DSH's security and service plumbing compares module identity (`Context.is`, `rootFibers`, typert's activation storage), so two copies of `@deepseek-ai/cordis` silently break the host.
 
 On Windows, `cliCommand: gitnexus` is resolved through `PATH`; the adapter then runs the bundled `node_modules/gitnexus/dist/cli/index.js` directly, avoiding a shell and keeping the search pattern out of `cmd.exe` parsing. An absolute Node script or executable is also accepted.
 
@@ -57,7 +96,7 @@ Inside DSH Desktop the host process is Electron, whose embedded Node reports a d
 
 ## Graph access without MCP
 
-The bundle deliberately does **not** register a GitNexus MCP row. In DSH Desktop the `dsh-mcp-client` row could settle in a state that stays "connected" with zero tools registered (the loader contains a failed startup tool-sync, the reconnect loop never fires, and the inventory shows "已连接但未注册任何工具"), and that failure mode is outside this plugin's control.
+The plugin deliberately does **not** register a GitNexus MCP row. In DSH Desktop the `dsh-mcp-client` row could settle in a state that stays "connected" with zero tools registered (the loader contains a failed startup tool-sync, the reconnect loop never fires, and the inventory shows "已连接但未注册任何工具"), and that failure mode is outside this plugin's control.
 
 Instead, the adapter watches the session's tool registry: when no `mcp__gitnexus__*` tools are registered, it prepends a short CLI guide (`gitnexus query` / `context` / `impact` / `detect-changes`) to the first context it injects — the agent reaches the exact same graph engine through the shell. The check is cached (`cliHintTtlMs`) and only a definite miss triggers the hint; an unreadable registry never does.
 
@@ -85,6 +124,8 @@ With that row live the adapter detects the registered `mcp__gitnexus__*` tools a
 | `enableStaleNotice` | `true` | Check/index reminders after successful git mutations |
 | `enableCliFallbackHint` | `true` | Point the agent at the local CLI when no GitNexus MCP tools are registered |
 | `cliHintTtlMs` | `1800000` | How long an MCP-absent verdict is cached before re-checking |
+| `enableTuiStatus` | `true` | Publish the adapter's hook state through `ctx.tuiStatus` |
+| `tuiStatusLingerMs` | `4000` | How long a completed hook status stays visible |
 | `augmentTimeoutMs` | `7000` | Upper bound for one augment call |
 | `staleTimeoutMs` | `3000` | Upper bound for the git/registry staleness check |
 | `contextMaxChars` | `12000` | Maximum injected context characters |
@@ -103,4 +144,4 @@ npm test
 
 `test/e2e.test.js` drives the adapter through its real `tools/post-execute` listener: CLI resolution, the context-injection and silent-failure contracts, and the stale-index notice against a throwaway git repository. It runs offline against the stubs in `test/fixtures/`; the single test that exercises the real GitNexus CLI skips itself when `gitnexus` is not on `PATH` or the checkout has no `.gitnexus` index.
 
-Tested with DeepSeek Harness `0.1.5-rc.2` and GitNexus `1.6.12`.
+Tested with DeepSeek Harness `0.1.5-rc.2`, `0.2.0-rc.2`, and GitNexus `1.6.12`.

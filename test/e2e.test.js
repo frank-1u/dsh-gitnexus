@@ -35,7 +35,7 @@ function runs(command, args, options = {}) {
 const gitPathFormat = runs('git', ['rev-parse', '--path-format=absolute', '--show-toplevel'], { cwd: repoRoot })
 
 /** Boot the adapter against a fake Cordis ctx and return its post-execute dispatcher. */
-function harness(config = {}, next = async () => ({ kind: 'accept' }), tools) {
+function harness(config = {}, next = async () => ({ kind: 'accept' }), tools, tuiStatus) {
   const listeners = new Map()
   // Resolve through the published schema so the adapter sees the same defaults
   // the DSH loader applies (enableAugment, enableStaleNotice, TTLs, ...).
@@ -44,6 +44,7 @@ function harness(config = {}, next = async () => ({ kind: 'accept' }), tools) {
       on: (event, listener) => listeners.set(event, listener),
       logger: { info() {}, warn() {} },
       ...(tools ? { tools } : {}),
+      ...(tuiStatus ? { get: name => (name === 'tuiStatus' ? tuiStatus : undefined) } : {}),
     },
     Config({ cliCommand: fixture('gitnexus-stub.mjs'), augmentTimeoutMs: 20000, staleTimeoutMs: 10000, ...config }),
   )
@@ -51,6 +52,19 @@ function harness(config = {}, next = async () => ({ kind: 'accept' }), tools) {
   assert.equal(typeof listener, 'function', 'adapter must register a tools/post-execute listener')
   return (execution, result = OK) => listener(execution, result, next)
 }
+
+/** Record every keyed TUI status write without implementing the host's store. */
+function statusSink() {
+  const writes = []
+  return {
+    writes,
+    set(key, text, identity) {
+      writes.push({ key, text, identity })
+      return () => {}
+    },
+  }
+}
+
 
 const execution = (cwd, name, args) => ({
   name,
@@ -98,8 +112,21 @@ test('adapter: attaches GitNexus context after a native grep', async () => {
   assert.match(contextText(decision), /\[GitNexus\]/)
 })
 
+test('adapter: stamps injected contexts with a producer-owned source kind', async () => {
+  // The retired `{ kind: 'plugin', plugin }` wrapper fails format v4 admission,
+  // which failed the whole round the moment an injected context was persisted.
+  const decision = await harness()(execution(repoRoot, 'grep', { pattern: 'extractSearchPattern' }))
+  assert.ok(hasContext(decision))
+  for (const message of decision.additionalContexts) {
+    assert.equal(typeof message.source?.kind, 'string')
+    assert.ok(message.source.kind.length > 0)
+    assert.notEqual(message.source.kind, 'plugin')
+    assert.equal(message.source.plugin, undefined)
+  }
+})
+
 test('adapter: keeps downstream additional contexts behind its own', async () => {
-  const downstream = { content: [{ type: 'text', text: 'downstream' }], source: { kind: 'plugin', plugin: 'other' } }
+  const downstream = { content: [{ type: 'text', text: 'downstream' }], source: { kind: 'plugin:other' } }
   const fire = harness({}, async () => ({ kind: 'accept', additionalContexts: [downstream] }))
   const decision = await fire(execution(repoRoot, 'grep', { pattern: 'extractSearchPattern' }))
   assert.equal(decision.additionalContexts.length, 2)
@@ -142,6 +169,38 @@ test('adapter: an unreadable tool registry never triggers the CLI hint', async (
 test('adapter: a failing GitNexus CLI never turns the tool result into an error', async () => {
   const fire = harness({ cliCommand: fixture('gitnexus-failing.mjs') })
   assert.deepEqual(await fire(execution(repoRoot, 'grep', { pattern: 'extractSearchPattern' })), { kind: 'accept' })
+})
+
+test('status: publishes the injected context through tuiStatus', async () => {
+  const tui = statusSink()
+  const fire = harness({ tuiStatusLingerMs: 5 }, undefined, undefined, tui)
+  const decision = await fire(execution(repoRoot, 'grep', { pattern: 'extractSearchPattern' }))
+  assert.ok(hasContext(decision))
+  assert.ok(tui.writes.length > 0)
+  assert.ok(tui.writes.every(write => write.key === 'gitnexus'))
+  assert.ok(tui.writes.every(write => write.identity !== undefined))
+  assert.match(tui.writes.at(-1).text, /^GitNexus ✓ context \+/)
+})
+
+test('status: reports a failed augment without changing the tool result', async () => {
+  const tui = statusSink()
+  const fire = harness({ cliCommand: fixture('gitnexus-failing.mjs'), tuiStatusLingerMs: 5 }, undefined, undefined, tui)
+  assert.deepEqual(await fire(execution(repoRoot, 'grep', { pattern: 'extractSearchPattern' })), { kind: 'accept' })
+  assert.equal(tui.writes.at(-1).text, 'GitNexus ✗ augment failed (exit 3)')
+})
+
+test('status: enableTuiStatus=false leaves the line untouched', async () => {
+  const tui = statusSink()
+  const fire = harness({ enableTuiStatus: false }, undefined, undefined, tui)
+  const decision = await fire(execution(repoRoot, 'grep', { pattern: 'extractSearchPattern' }))
+  assert.ok(hasContext(decision))
+  assert.equal(tui.writes.length, 0)
+})
+
+test('status: a tuiStatus without set is ignored', async () => {
+  const fire = harness({}, undefined, undefined, {})
+  const decision = await fire(execution(repoRoot, 'grep', { pattern: 'extractSearchPattern' }))
+  assert.ok(hasContext(decision))
 })
 
 const repo = { dir: null, head: null }
@@ -218,6 +277,14 @@ staleTest('stale: does not repeat an unchanged notice inside the TTL', async () 
   const fire = harness({ staleNoticeTtlMs: 600000 })
   assert.match(contextText(await fire(execution(repo.dir, 'pwsh', { command: 'git commit -m "fixture"' }))), /index is stale/)
   assert.equal(hasContext(await fire(execution(repo.dir, 'pwsh', { command: 'git commit -m "fixture"' }))), false)
+})
+
+staleTest('stale: publishes the stale index on the status line', async () => {
+  writeIndex('0'.repeat(40))
+  const tui = statusSink()
+  const fire = harness({ tuiStatusLingerMs: 5 }, undefined, undefined, tui)
+  await fire(execution(repo.dir, 'pwsh', { command: 'git commit -m "fixture"' }))
+  assert.ok(tui.writes.some(write => /^GitNexus ⚠ index stale \(0{7} → /.test(write.text)))
 })
 
 test('real GitNexus: augment returns graph context for an indexed repository', async t => {
