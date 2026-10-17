@@ -106,12 +106,16 @@ function assertRanIn(decision, directory) {
 
 // Every shell-resolution exercise runs against this throwaway tree so the
 // expected absolute directories are independent of the checkout.
+// Its path acts as the session CWD.
 const augmentRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-gitnexus-augment-root-'))
 after(() => fs.rmSync(augmentRoot, { recursive: true, force: true }))
 const inRoot = (...segments) => path.join(augmentRoot, ...segments)
 fs.mkdirSync(inRoot('repo', 'nested'), { recursive: true })
 fs.mkdirSync(inRoot('absolute'), { recursive: true })
 fs.mkdirSync(inRoot('with space'), { recursive: true })
+// Single-quoted targets are literal, so `$` and a backslash name real directories.
+fs.mkdirSync(inRoot('literal$dir'), { recursive: true })
+fs.mkdirSync(inRoot('with\\backslash'), { recursive: true })
 fs.mkdirSync(inRoot('home', 'repo'), { recursive: true })
 // A regular file inside the tree: a search `path` that names it resolves to
 // its parent directory instead of the session cwd.
@@ -306,9 +310,12 @@ test('augment root: a quoted target may contain spaces', async () => {
 
 test('augment root: ~ expands to the home directory', async () => {
   const home = inRoot('home')
-  const decision = await withHome(home, () => harness()(execution(augmentRoot, 'bash', { command: 'cd ~/repo && grep needle' })))
+  const fire = harness()
+  const decision = await withHome(home, () => fire(execution(augmentRoot, 'bash', { command: 'cd ~/repo && grep needle' })))
   assert.ok(hasContext(decision))
   assertRanIn(decision, inRoot('home', 'repo'))
+  // The same target with a doubled slash must still land under home, not at /repo.
+  assertRanIn(await withHome(home, () => fire(execution(augmentRoot, 'bash', { command: 'cd ~//repo && grep needle' }))), inRoot('home', 'repo'))
 })
 
 test('augment root: variable expansion and history cd fall back to the session cwd', async () => {
@@ -362,10 +369,16 @@ test('augment root: ~user, globs and unquoted backslashes fall back to the sessi
   assertRanIn(await fire(execution(augmentRoot, 'bash', { command: 'cd repo & grep needle' })), augmentRoot)
 })
 
-test('augment root: a quoted target with expansion or escapes falls back to the session cwd', async () => {
+test('augment root: a single-quoted target is fully literal', async () => {
+  const fire = harness()
+  assertRanIn(await fire(execution(augmentRoot, 'bash', { command: "cd 'literal$dir' && grep needle" })), inRoot('literal$dir'))
+  assertRanIn(await fire(execution(augmentRoot, 'bash', { command: "cd 'with\\backslash' && grep needle" })), inRoot('with\\backslash'))
+})
+
+test('augment root: a double-quoted target with expansion or escapes falls back to the session cwd', async () => {
   const fire = harness()
   assertRanIn(await fire(execution(augmentRoot, 'bash', { command: 'cd "$TARGET" && grep needle' })), augmentRoot)
-  assertRanIn(await fire(execution(augmentRoot, 'bash', { command: "cd 'a\\ b' && grep needle" })), augmentRoot)
+  assertRanIn(await fire(execution(augmentRoot, 'bash', { command: 'cd "a\\ b" && grep needle' })), augmentRoot)
 })
 
 test('augment root: cd with no target or an option falls back to the session cwd', async () => {
@@ -415,15 +428,22 @@ test('augment root: an unreadable search path falls back to the session cwd', as
   try {
     fs.chmodSync(unreadable, 0o000)
     let denied = false
+    // Both facts matter: the directory itself is unreadable, and traversal into
+    // it is denied. A filesystem that enforces neither cannot exercise this case.
+    try {
+      fs.accessSync(unreadable, fs.constants.R_OK | fs.constants.X_OK)
+    } catch {
+      denied = true
+    }
     try {
       fs.statSync(path.join(unreadable, 'target.txt'))
     } catch {
       denied = true
     }
-    if (!denied) return t.skip('filesystem permissions do not deny traversal')
-    const decision = await harness()(execution(augmentRoot, 'grep', { pattern: 'needle', path: path.join('unreadable', 'target.txt') }))
-    assert.ok(hasContext(decision))
-    assertRanIn(decision, augmentRoot)
+    if (!denied) return t.skip('filesystem permissions do not deny access')
+    const fire = harness()
+    assertRanIn(await fire(execution(augmentRoot, 'grep', { pattern: 'needle', path: 'unreadable' })), augmentRoot)
+    assertRanIn(await fire(execution(augmentRoot, 'grep', { pattern: 'needle', path: path.join('unreadable', 'target.txt') })), augmentRoot)
   } finally {
     fs.chmodSync(unreadable, 0o755)
   }
