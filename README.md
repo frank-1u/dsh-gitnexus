@@ -18,6 +18,34 @@ When no `mcp__gitnexus__*` tools are registered in the session, the first inject
 
 This is intentionally a **post-result adapter**. DSH's typed tool pipeline does not expose GitNexus-style pre-tool `additionalContext`; attaching context after the search is the supported model-visible channel.
 
+## Augment Root
+
+GitNexus runs in the call's **Augment Root**, which is not necessarily the session directory. Resolution order:
+
+1. A directory the call declares: `workdir` for `bash`/`pwsh`, `path` for `grep`/`glob` (a file `path` resolves to its directory). A relative path resolves against the session CWD.
+2. A literal leading `cd` chain in the shell command, applied in order on top of `workdir`.
+3. The session CWD.
+
+Only statically resolvable forms count; the adapter never models shell flow:
+
+- Segments must be consecutive at the start of the command, separated by `&&`, `;`, or a newline — `cd repo && grep …`, `cd repo; rg …`, or `cd repo` newline `rg …`.
+- `cd a && cd b` applies both in order. A `cd` after any other command is ignored, and the earlier directory stands.
+- A target is one bare literal without shell metacharacters/expansion, or one single- or double-quoted string without escapes. `~` and `~/...` expand to the home directory; `~user` is not supported.
+- On Windows, `pwsh` treats backslashes as path separators, so a Windows absolute target such as `C:\repo` is accepted. On POSIX a backslash is an escape marker and voids the chain.
+
+The whole chain is discarded — never a partial result, the base directory wins — when it contains any of:
+
+- `$VAR`, `$`, backticks, or a quoted target containing them
+- `cd -`, `cd --`, `cd` with no target, or a target starting with `-`
+- output redirection (`cd a > log` or `cd a>log`), a pipe, `||`, a lone `&`, grouping/subshells
+- glob or brace characters (`*`, `?`, `[`, `]`, `{`, `}`)
+- backslash escapes (POSIX), a quoted target with escapes, or an empty/multi-token target
+- a leading `cd` chain that starts after another command (`echo x && cd repo`)
+
+`pushd` and `Set-Location` are not `cd`, so they end the chain. Persistent shell tools whose working directory survives across calls are not supported and must pass `workdir`. When a call declares no directory, the adapter uses the session CWD and never guesses.
+
+The stale-index notice uses the same resolution, so `cd repo && git commit` checks that repository's index.
+
 ## Hook status in dsh-TUI
 
 A profile composed with `dsh-tui` exposes `ctx.tuiStatus`, a keyed status line above the prompt. The adapter publishes the state of its post-execute work there, in the spirit of Claude Code's hook status:

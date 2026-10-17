@@ -3,7 +3,9 @@
 const [command = '', ...rest] = process.argv.slice(2)
 
 if (command === 'augment') {
-  process.stderr.write('GitNexus Augment (stub)\n[GitNexus] stub context for ' + rest.join(' ') + '\n')
+  // Report the directory GitNexus actually ran in: the end-to-end seam asserts
+  // that the adapter resolved the Augment Root, never its internals.
+  process.stderr.write('GitNexus Augment (stub)\n[GitNexus] stub context for ' + rest.join(' ') + ' cwd=' + process.cwd() + '\n')
 } else {
   process.stderr.write('gitnexus stub: unhandled command ' + command + '\n')
   process.exitCode = 1
