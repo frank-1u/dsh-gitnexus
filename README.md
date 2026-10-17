@@ -86,7 +86,7 @@ Installed code is picked up on the next reload: toggle the plugin in Settings ->
 
 ### Activate the row from the profile patch
 
-`dsh-gitnexus` 0.4.2 ships as a **plain dependency**, not as a profile bundle: it deliberately declares no `dsh.bundle`. dsh-tui 0.16.0 composes any third-party bundle too early and installs its root-capability guard before the profile has activated, which makes every core plugin fail with `root.effect is unavailable from a plugin activation` (evidence and the exact call chain in [ADR 0003](docs/adr/0003-gitnexus-row-in-profile-patch.md)). `dsh plugin add` therefore prints:
+`dsh-gitnexus` 0.4.2+ ships as a **plain dependency**, not as a profile bundle: it deliberately declares no `dsh.bundle`. dsh-tui 0.16.0 composes any third-party bundle too early and installs its root-capability guard before the profile has activated, which makes every core plugin fail with `root.effect is unavailable from a plugin activation` (evidence and the exact call chain in [ADR 0003](docs/adr/0003-gitnexus-row-in-profile-patch.md)). `dsh plugin add` therefore prints:
 
 ```text
 dsh: warning: dsh-gitnexus declares no dsh.bundle — installed as a plain dependency, not a profile layer
